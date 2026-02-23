@@ -2,3 +2,14 @@ results
 rank1-run-files
 .venv
 __pycache__
+slurm-*.out
+logs/
+test_qwen_*.py
+test_qwen_*.sh
+test_rank1_*.py
+test_rank1_*.sh
+test_nvidia_*.py
+test_nvidia_*.sh
+test_qwq_*.py
+test_qwq_*.sh
+test_rank1.sh
