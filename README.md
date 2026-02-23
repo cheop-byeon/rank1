@@ -1,141 +1,152 @@
-<h1 align="center">Rank1: Test-Time Compute for Reranking in Information Retrieval</h1>
+# Rank1 Evaluation Pipeline for CodeConvo Dataset
 
-<h4 align="center">
-    <p>
-        <a href="#links">Model/Data Links</a> |
-        <a href="#installation">Installation</a> |
-        <a href="#usage">Usage</a> |
-        <a href="#citing">Citation</a>
-    <p>
-</h4>
+This repository contains an optimized evaluation pipeline for using **Rank1** as a reranker in a two-stage information retrieval system. The pipeline is designed for efficient batch evaluation on the CodeConvo internet-drafts (I-Ds) dataset with support for multiple models, retrievers, splits, and directions.
 
-Official repository for [rank1, a reasoning reranker model that "thinks"](http://arxiv.org/abs/2502.18418). Rank1 leverages test-time compute to generate reasoning chains before making relevance judgments.
+**Features:**
+- Two-stage retrieval pipeline (BM25/dense retrieval → Rank1 reranking)
+- Configurable retrievers (bm25s, e5-small, etc.) and rerankers (rank1 models)
+- Support for multiple data splits (test, dev) and directions (i2c, c2i)
+- Automatic GPU allocation based on model size
+- Batch SLURM job submission with parallel evaluation
+- Optimized logging and result organization
 
-## Links
-#### Models
-| Resource | Description |
-|:---------|:------------|
-| [rank1-0.5b](https://huggingface.co/jhu-clsp/rank1-0.5b) | Trained from Qwen2.5-0.5B base |
-| [rank1-1.5b](https://huggingface.co/jhu-clsp/rank1-1.5b) | Trained from Qwen2.5-1.5B base |
-| [rank1-3b](https://huggingface.co/jhu-clsp/rank1-3b) | Trained from Qwen2.5-3B base |
-| [rank1-7b](https://huggingface.co/jhu-clsp/rank1-7b) | Trained from Qwen2.5-7B base |
-| [rank1-14b](https://huggingface.co/jhu-clsp/rank1-14b) | Trained from Qwen2.5-14B base |
-| [rank1-32b](https://huggingface.co/jhu-clsp/rank1-32b) | Trained from Qwen2.5-32B base |
-| [rank1-mistral-2501-24b](https://huggingface.co/jhu-clsp/rank1-mistral-2501-24b) | Trained from Mistral-Small 2501 24B base |
-| [rank1-llama3-8b](https://huggingface.co/jhu-clsp/rank1-llama3-8b) | Trained from Llama 3.1 8B base |
+## Quick Start
 
-#### Quantized Models (fits in 24GB GPUs)
-| Resource | Description |
-|:---------|:------------|
-| [rank1-7b-awq](https://huggingface.co/jhu-clsp/rank1-7b-awq) | Quantized version of rank1-7b  |
-| [rank1-14b-awq](https://huggingface.co/jhu-clsp/rank1-14b-awq) | Quantized version of rank1-14b  |
-| [rank1-32b-awq](https://huggingface.co/jhu-clsp/rank1-32b-awq) | Quantized version of rank1-32b  |
-| [rank1-mistral-2501-24b-awq](https://huggingface.co/jhu-clsp/rank1-mistral-2501-24b-awq) | Quantized version of rank1-mistral-24b  |
-| [rank1-llama3-8b-awq](https://huggingface.co/jhu-clsp/rank1-llama3-8b-awq) | Quantized version of rank1-llama3-8b  |
+```bash
+# Single evaluation
+python test_rank1.py -d "ids-supp" -m "./models/rank1-32b" -n 2
 
-#### Datasets
-| Resource | Description |
-|:---------|:------------|
-| [rank1-r1-msmarco](https://huggingface.co/datasets/jhu-clsp/rank1-R1-MSMARCO) | All R1 output examples from MS MARCO |
-| [rank1-training-data](https://huggingface.co/datasets/jhu-clsp/rank1-training-data) | Training data used for rank1 models |
-| [rank1-run-files](https://huggingface.co/datasets/jhu-clsp/rank1-Run-Files) | Pre-computed run files for use in top 100 doc reranking |
+# Batch evaluation (submit all models)
+bash submit_all_evaluations.sh
+```
+
+## Table of Contents
+- [Installation](#installation)
+- [Usage](#usage)
+- [Architecture](#architecture)
+- [Citing](#citing)
+- [License](#license)
 
 ## Installation 
-To reproduce the experiments, you can use the following code with uv for fast, reliable dependency management:
+
+To reproduce the experiments, we recommend using conda environment to handle dependencies:
 
 ```bash
 git clone https://github.com/orionw/rank1.git
 cd rank1/
-git submodule update --init --recursive
 
-# Install uv if you don't have it already
-curl -fsSL https://pkg.uv.dev/install.sh | sh
+conda create -p /path/to/.conda/envs/rank1 python=3.10
+conda activate /path/to/.conda/envs/rank1
 
-# Create and activate virtual environment with uv
-uv venv env --python=3.10
-source env/bin/activate 
-
-# Install dependencies with uv
-uv pip install -r requirements.txt
-uv pip install -e mteb_branch/
-uv pip install --no-build-isolation xformers==0.0.28.post3
-uv pip install vllm==0.7.2
-
-# Recommended: download a flash attention wheel from https://github.com/Dao-AILab/flash-attention/releases and `uv pip install` it
-# wget https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-# uv pip install flash_attn-2.7.4.post1+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-
-# Download the Rank1-Run-Files repository (required for evaluation)
-git lfs install # if you don't have it already
-git clone https://huggingface.co/datasets/jhu-clsp/rank1-run-files
+# Install dependencies
+pip install -r requirements.txt
+pip install -e mteb_branch/
+pip install --no-build-isolation xformers==0.0.28.post3
+pip install vllm==0.7.2
+pip install flash-attn
 ```
 
 ## Usage
-### Tips
-**Reproducibility** Depending on your batch size for evaluation you will get minorly different results due to non-determinisms in vLLM. For our experiments we processed all instances in one batch (e.g. batch_size=99999999999). We also found that using the flag `enforce_eager` sped up inference for the smaller models but not for the larger models.
 
-**Adapting to New Tasks** You may want to use these models on tasks where the relevance definition is different from MS MARCO. For these you will want a custom prompt to let the model know. You can see these in `prompts.py` various datasets. 
-
-
-### Running Evaluations
-To run an evaluation with the rank1 model on a specific dataset:
+### MTEB Evaluation with test_rank1.py
+For advanced evaluation with configurable retrievers, rerankers, splits, and directions:
 
 ```bash
-bash launch_job.sh jhu-clsp/rank1-7b NevIR default 1
+# Basic usage with default BM25 retriever, test split, i2c direction
+python test_rank1.py -d "ids-supp" -m "/path/to/rank1-32b" -n 2
+
+# With custom retriever model
+python test_rank1.py -d "ids-supp" -m "/path/to/rank1-32b" -r "bm25s" -n 2
+
+# With custom split and direction
+python test_rank1.py -d "ids-supp" -m "/path/to/rank1-32b" -s "dev" --direction "c2i" -n 2
+
+# With all options
+python test_rank1.py -d "ids-supp" -m "/path/to/rank1-32b" -r "e5-small" -s "test" --direction "i2c" -n 2 -p
 ```
 
-Parameters:
-- `jhu-clsp/rank1-7b`: Model name or path
-- `NevIR`: Dataset name
-- `default`: Subtask name (use "default" if no subtask)
-- `1`: Number of GPUs to use
+**Arguments:**
+- `-d, --dataset`: MTEB dataset name (required)
+- `-m, --model_path`: Path to the reranker model (required)
+- `-n, --num_gpus`: Number of GPUs to use (default: 1)
+- `-r, --retriever`: Retriever model to use (default: "bm25s")
+- `-s, --split`: Data split to evaluate (default: "test", choices: "test", "dev")
+- `--direction`: Direction for evaluation (default: "i2c", choices: "i2c", "c2i")
+- `-p, --skip_prompt`: Skip prompt augmentation
 
+**Example workflows:**
 
-### Using Rank1 in Your Own Code
-You can integrate rank1 into your code:
+```bash
+# Evaluate rank1-32b with BM25 retriever on test split
+python test_rank1.py -d "ids-supp" -m "./models/rank1-32b" -n 2
 
-```python
-from rank1 import rank1
+# Evaluate qwen-72b with e5-small retriever on dev split with c2i direction
+python test_rank1.py -d "ids-supp" -m "./models/qwen-72b" -r "e5-small" -s "dev" --direction "c2i" -n 4
 
-# Initialize the model
-model = rank1(
-    model_name_or_path="jhu-clsp/rank1-7B",
-    num_gpus=1,
-    device="cuda",
-    context_size=16000,
-    max_output_tokens=8192,
-    fp_options="float16"
-)
-
-# Rerank documents
-results = model.predict({
-    "query": ["Your query/prompt here", "Same number as docs"],
-    "corpus": ["Document 1 content", "Document 2 content", ...],
-})
+# Evaluate with multiple models and splits using a loop
+for model in rank1-7b rank1-14b rank1-32b; do
+    for split in test dev; do
+        python test_rank1.py -d "ids-supp" -m "./models/$model" -r "bm25s" -s "$split" -n 2
+    done
+done
 ```
+
+**Output Structure:**
+Results are organized dynamically based on split, direction, retriever, and reranker:
+```
+results/
+├── stage1/{split}/{direction}/{retriever_name}/
+│   └── {dataset}_default_predictions.json
+└── stage2/{split}/{direction}/{retriever_name}/{reranker_name}/
+```
+
+**Examples:**
+```
+results/stage1/test/i2c/bm25s/
+results/stage1/dev/c2i/bm25s/
+results/stage2/test/i2c/bm25s/rank1-32b/
+results/stage2/dev/c2i/e5-small/qwen-72b/
+```
+
+**Batch Submission with Dynamic Configuration:**
+To submit multiple models as SLURM jobs with optimal GPU allocation and configurable split/direction:
+
+```bash
+bash submit_all_evaluations.sh
+```
+
+Customize the evaluation by editing the configuration variables in the script:
+```bash
+# Edit these lines in submit_all_evaluations.sh
+retriever_model="bm25s"  # Change retriever model
+SPLIT="test"             # Change to "dev" for development split
+DIRECTION="i2c"          # Change to "c2i" for corpus-to-internet direction
+CONDA_ENV="/path/to/.conda/envs/rank1"
+ACCOUNT="12345678"       # Your SLURM account
+```
+
+This will automatically allocate GPUs based on model size:
+- 7B models: 1 GPU
+- 14B models: 2 GPUs  
+- 32B models: 2 GPUs
+- 72B models: 4 GPUs
+
 
 ### MTEB Integration
-Rank1 is compatible with the MTEB benchmarking framework. To evaluate your model:
+Rank1 is compatible with the MTEB benchmarking framework. For more information on Rank1 and its capabilities, see the [official Rank1 repository](https://github.com/orionw/rank1) and [paper](http://arxiv.org/abs/2502.18418).
 
-```python
-from mteb import MTEB
-from rank1 import rank1
+## Architecture
 
-# Initialize your model
-model = rank1(
-    model_name_or_path="jhu-clsp/rank1-7b",
-    num_gpus=1,
-    device="cuda"
-)
+The evaluation pipeline uses a two-stage architecture:
 
-# Select tasks (or use specific task names)
-evaluation = MTEB(tasks=["NevIR"])
+1. **Stage 1: Dense/Lexical Retrieval** - Initial ranking using BM25, BM25s, or dense retrievers (e5-small, etc.)
+   - Output: Top-1000 documents for reranking
+   
+2. **Stage 2: Rank1 Reranking** - Fine-grained relevance scoring using Rank1 models
+   - Input: Top-1000 documents from Stage 1
+   - Output: Top-50 final rankings
 
-# Run evaluation
-results = evaluation.run(model)
-```
-
-## Citing
+Results are saved at each stage with automatic GPU allocation and job management via SLURM.
 If you use rank1 you can cite:
 
 ```bibtex
