@@ -2,3 +2,5 @@
 	path = mteb_branch
 	url = https://github.com/embeddings-benchmark/mteb.git
 	branch = ce-update
+[submodule "mteb_branch"]
+	url = https://github.com/cheop-byeon/mteb-R2Gen.git
